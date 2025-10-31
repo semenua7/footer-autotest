@@ -30,7 +30,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests (headless) with HTML report
-         env:
+        env:
           BASE_URL: https://only.digital
           PAGES: https://only.digital
         run: |
