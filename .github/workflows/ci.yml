@@ -30,11 +30,13 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests (headless) with HTML report
-        env:
+         env:
           BASE_URL: https://only.digital
+          PAGES: https://only.digital
         run: |
           mkdir -p reports
           pytest -v --html=reports/report.html --self-contained-html
+
 
       - name: Upload HTML report
         if: always()
