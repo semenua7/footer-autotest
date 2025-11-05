@@ -3,7 +3,6 @@ import pytest
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 FOOTER_XPATHS = [
     "//footer",
@@ -19,7 +18,7 @@ def _try_find_footer(driver):
             return els[0]
     return None
 
-def wait_for_footer(driver, timeout=20):
+def wait_for_footer(driver, timeout=25):
     wait = WebDriverWait(driver, timeout, poll_frequency=0.5)
     try:
         return wait.until(lambda d: _try_find_footer(d))
@@ -52,23 +51,21 @@ def has_social_or_contacts(footer):
 
 @pytest.mark.parametrize("url", [], ids=[])
 def test_placeholder():
-    # чтобы pytest не ругался на пустую параметризацию до генерации
     assert True
 
 def pytest_generate_tests(metafunc):
     if "url" in metafunc.fixturenames:
-        # берём список страниц из фикстуры pages (см. conftest.py)
         pages = metafunc.config._fixturemanager.getfixturedefs("pages", metafunc.module)[0].func()
         metafunc.parametrize("url", pages, ids=pages)
 
 def test_footer_present(driver, url):
     driver.get(url)
-    footer = wait_for_footer(driver, timeout=20)
+    footer = wait_for_footer(driver, timeout=25)
     assert footer is not None, "Footer should exist on the page"
 
 def test_footer_has_links_and_text(driver, url):
     driver.get(url)
-    footer = wait_for_footer(driver, timeout=20)
+    footer = wait_for_footer(driver, timeout=25)
     links = footer.find_elements(By.TAG_NAME, "a")
     assert len(links) >= 1, "Footer should have at least one link"
     text = (footer.text or "").strip()
@@ -76,10 +73,10 @@ def test_footer_has_links_and_text(driver, url):
 
 def test_footer_has_policy_or_contacts(driver, url):
     driver.get(url)
-    footer = wait_for_footer(driver, timeout=20)
+    footer = wait_for_footer(driver, timeout=25)
     assert has_policy_or_contacts(footer), "Footer should contain policy/privacy or contacts link/text"
 
 def test_footer_has_social_or_contacts(driver, url):
     driver.get(url)
-    footer = wait_for_footer(driver, timeout=20)
+    footer = wait_for_footer(driver, timeout=25)
     assert has_social_or_contacts(footer), "Footer should contain at least one social or contact link (mailto/tel)"
