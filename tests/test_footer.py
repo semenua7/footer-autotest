@@ -52,10 +52,12 @@ def has_social_or_contacts(footer):
 
 @pytest.mark.parametrize("url", [], ids=[])
 def test_placeholder():
+    # чтобы pytest не ругался на пустую параметризацию до генерации
     assert True
 
 def pytest_generate_tests(metafunc):
     if "url" in metafunc.fixturenames:
+        # берём список страниц из фикстуры pages (см. conftest.py)
         pages = metafunc.config._fixturemanager.getfixturedefs("pages", metafunc.module)[0].func()
         metafunc.parametrize("url", pages, ids=pages)
 
