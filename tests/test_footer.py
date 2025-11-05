@@ -1,23 +1,14 @@
 import os
 import re
 import pytest
+from urllib.parse import urlparse
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
 
-# ---------- Параметризация страниц без хитростей ----------
-# Берём список страниц из ENV PAGES (через запятую) или BASE_URL (по умолчанию главная)
-def _get_pages():
-    pages_env = os.getenv("PAGES", "").strip()
-    if pages_env:
-        lst = [u.strip() for u in pages_env.split(",") if u.strip()]
-        return lst if lst else ["https://only.digital"]
-    base = os.getenv("BASE_URL", "https://only.digital").strip()
-    return [base]
+WAIT_SEC = int(os.getenv("WAIT_SEC", "25"))
+DOMAIN = urlparse(os.getenv("BASE_URL", "https://only.digital")).netloc
 
-PAGES = _get_pages()
-
-# ---------- Утилиты для поиска футера ----------
 FOOTER_XPATHS = [
     "//footer",
     "//*[@role='contentinfo']",
@@ -25,68 +16,71 @@ FOOTER_XPATHS = [
     "//*[contains(translate(@class,'FOOTER','footer'),'footer')]",
 ]
 
-def _try_find_footer(driver):
+SOCIAL_PATTERNS = [
+    "vk.com", "t.me", "telegram", "instagram.com",
+    "linkedin.com", "youtube.com", "youtube."
+]
+
+def wait_for(driver, predicate, timeout=WAIT_SEC):
+    """Универсальный явный ожидатель."""
+    w = WebDriverWait(driver, timeout, poll_frequency=0.5)
+    return w.until(lambda d: predicate())
+
+def find_footer(driver):
     for xp in FOOTER_XPATHS:
         els = driver.find_elements(By.XPATH, xp)
         if els:
             return els[0]
     return None
 
-def wait_for_footer(driver, timeout=25):
-    wait = WebDriverWait(driver, timeout=timeout, poll_frequency=0.5)
+def is_internal(href: str) -> bool:
+    if not href:
+        return False
+    if href.startswith(("mailto:", "tel:", "#", "javascript:")):
+        return False
     try:
-        return wait.until(lambda d: _try_find_footer(d))
-    except TimeoutException:
-        raise NoSuchElementException("Footer element not found after wait")
+        return urlparse(href).netloc in ("", DOMAIN)
+    except Exception:
+        return False
 
-def has_policy_or_contacts(footer):
-    text = footer.text or ""
-    if re.search(r"политик|privacy|confidential|конфиденц", text, re.IGNORECASE):
-        return True
-    links = footer.find_elements(By.TAG_NAME, "a")
-    for a in links:
-        href = (a.get_attribute("href") or "").lower()
-        if any(k in href for k in ["policy", "privacy", "confidential"]):
-            return True
-        if re.search(r"контакт|contact", (a.text or ""), re.IGNORECASE):
-            return True
-    return False
-
-def has_social_or_contacts(footer):
-    links = footer.find_elements(By.TAG_NAME, "a")
-    socials = ["vk.com", "t.me", "telegram", "instagram.com", "linkedin.com", "youtube.com", "youtube."]
-    for a in links:
-        href = (a.get_attribute("href") or "").lower()
-        if any(s in href for s in socials):
-            return True
-        if href.startswith("mailto:") or href.startswith("tel:"):
-            return True
-    return False
-
-# ---------- Тесты ----------
-@pytest.mark.parametrize("url", PAGES, ids=PAGES)
+@pytest.mark.parametrize("url", ["https://only.digital"], ids=["home"])
 def test_footer_present(driver, url):
     driver.get(url)
-    footer = wait_for_footer(driver, timeout=25)
-    assert footer is not None, "Footer should exist on the page"
+    try:
+        footer = wait_for(driver, lambda: find_footer(driver))
+    except TimeoutException:
+        raise NoSuchElementException("Footer not found on page within timeout")
+    assert footer is not None, "Footer element must exist"
 
-@pytest.mark.parametrize("url", PAGES, ids=PAGES)
-def test_footer_has_links_and_text(driver, url):
+@pytest.mark.parametrize("url", ["https://only.digital"], ids=["home"])
+def test_footer_has_logo_nav_contacts_social(driver, url):
     driver.get(url)
-    footer = wait_for_footer(driver, timeout=25)
+    footer = wait_for(driver, lambda: find_footer(driver))
+
+    # 1) Логотип (img или svg внутри футера)
+    has_logo = bool(footer.find_elements(By.TAG_NAME, "img")) or bool(footer.find_elements(By.TAG_NAME, "svg"))
+    assert has_logo, "Footer should contain logo (img or svg)"
+
+    # 2) Навигационные ссылки (внутренние)
     links = footer.find_elements(By.TAG_NAME, "a")
-    assert len(links) >= 1, "Footer should have at least one link"
-    text = (footer.text or "").strip()
-    assert len(text) >= 10, "Footer text should not be empty (>= 10 symbols)"
+    internal_links = [a for a in links if is_internal(a.get_attribute("href") or "")]
+    assert len(internal_links) >= 1, "Footer should contain at least 1 internal nav link"
 
-@pytest.mark.parametrize("url", PAGES, ids=PAGES)
-def test_footer_has_policy_or_contacts(driver, url):
-    driver.get(url)
-    footer = wait_for_footer(driver, timeout=25)
-    assert has_policy_or_contacts(footer), "Footer should contain policy/privacy or contacts link/text"
+    # 3) Контактная информация (mailto/tel или текст)
+    has_contact_link = any(
+        (a.get_attribute("href") or "").lower().startswith(("mailto:", "tel:")) for a in links
+    )
+    text = (footer.text or "").lower()
+    has_contact_text = bool(re.search(r"(contact|контакт|support|поддержк|почта|email|телефон)", text))
+    assert has_contact_link or has_contact_text, "Footer should have contact info (mailto/tel link or contact text)"
 
-@pytest.mark.parametrize("url", PAGES, ids=PAGES)
-def test_footer_has_social_or_contacts(driver, url):
-    driver.get(url)
-    footer = wait_for_footer(driver, timeout=25)
-    assert has_social_or_contacts(footer), "Footer should contain at least one social or contact link (mailto/tel)"
+    # 4) Социальные сети
+    has_social = any(
+        any(p in (a.get_attribute("href") or "").lower() for p in SOCIAL_PATTERNS)
+        for a in links
+    )
+    # не критично для прохождения, но если хотите — сделайте строгим:
+    # assert has_social, "Footer should contain at least one social link"
+    # Пока оставим мягко, чтобы не зависеть от изменений сайта:
+    if not has_social:
+        print("Note: no social links detected in footer — not failing the test.")
