@@ -1,11 +1,10 @@
-
 import os
 import re
-import time
 import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import pytest
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
@@ -22,9 +21,12 @@ def is_internal(href, base):
     return u.netloc == urlparse(base).netloc
 
 def discover_pages(base=DEFAULT_BASE, limit=5):
+    # Если PAGES передан через env — используем его (через запятую)
     pages_env = os.getenv("PAGES")
     if pages_env:
-        return [u.strip() for u in pages_env.split(",") if u.strip()]
+        lst = [u.strip() for u in pages_env.split(",") if u.strip()]
+        return lst if lst else [base]
+    # Иначе пытаемся аккуратно взять несколько внутренних ссылок с главной
     try:
         r = requests.get(base, timeout=10)
         r.raise_for_status()
@@ -35,10 +37,8 @@ def discover_pages(base=DEFAULT_BASE, limit=5):
             if is_internal(href, base):
                 full = urljoin(base, href)
                 hrefs.append(full)
-        uniq = []
-        seen = set()
+        uniq, seen = [], set()
         for u in hrefs:
-            # нормализуем, убираем якоря/квери
             p = urlparse(u)
             norm = f"{p.scheme}://{p.netloc}{p.path}"
             if norm not in seen:
@@ -71,8 +71,7 @@ def driver():
     yield driver
     driver.quit()
 
-
-# --- Screenshot on failure ----------------------------------------------------
+# ------------------- screenshots on failure -------------------
 import pathlib
 
 def _safe_name(s: str) -> str:
@@ -82,27 +81,22 @@ def _safe_name(s: str) -> str:
     return s or "page"
 
 def pytest_runtest_makereport(item, call):
-    # Attach test outcome to the item for later use
     outcome = yield
     rep = outcome.get_result()
     setattr(item, "rep_" + rep.when, rep)
 
 @pytest.fixture(autouse=True)
 def screenshot_on_failure(request, driver):
-    # Run test
     yield
-    # After test: if failed, make a screenshot
     failed = getattr(request.node, "rep_call", None)
     if failed and failed.failed:
-        # Try to get page url param if present
         page = "page"
         if hasattr(request.node, "callspec"):
             page = request.node.callspec.params.get("url", "page")
         fname = _safe_name(page)
         out_dir = pathlib.Path("reports") / "screenshots"
         out_dir.mkdir(parents=True, exist_ok=True)
-        png_path = out_dir / f"failed_{fname}.png"
         try:
-            driver.save_screenshot(str(png_path))
+            driver.save_screenshot(str(out_dir / f"failed_{fname}.png"))
         except Exception:
             pass
