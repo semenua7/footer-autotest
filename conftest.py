@@ -7,8 +7,8 @@ import pytest
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-from webdriver_manager.chrome import ChromeDriverManager
 
 DEFAULT_BASE = os.getenv("BASE_URL", "https://only.digital")
 
@@ -21,12 +21,13 @@ def is_internal(href, base):
     return u.netloc == urlparse(base).netloc
 
 def discover_pages(base=DEFAULT_BASE, limit=5):
-    # Если PAGES передан через env — используем его (через запятую)
+    # Если явно задан PAGES — используем его
     pages_env = os.getenv("PAGES")
     if pages_env:
         lst = [u.strip() for u in pages_env.split(",") if u.strip()]
         return lst if lst else [base]
-    # Иначе пытаемся аккуратно взять несколько внутренних ссылок с главной
+
+    # Иначе аккуратно собираем до limit внутренних ссылок с главной
     try:
         r = requests.get(base, timeout=10)
         r.raise_for_status()
@@ -62,14 +63,26 @@ def driver():
     caps["goog:loggingPrefs"] = {"browser": "ALL"}
 
     options = Options()
+    # headless режим GitHub Actions (стабильный вариант)
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
 
-    driver = webdriver.Chrome(ChromeDriverManager().install(), options=options, desired_capabilities=caps)
-    yield driver
-    driver.quit()
+    # Сначала пробуем Selenium Manager (рекомендуемый способ)
+    try:
+        drv = webdriver.Chrome(options=options, desired_capabilities=caps)
+    except Exception:
+        # На всякий случай fallback на webdriver-manager (если добавите в requirements)
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager
+            drv = webdriver.Chrome(service=Service(ChromeDriverManager().install()),
+                                   options=options, desired_capabilities=caps)
+        except Exception as e:
+            raise RuntimeError(f"Chrome start failed: {e}")
+
+    yield drv
+    drv.quit()
 
 # ------------------- screenshots on failure -------------------
 import pathlib
