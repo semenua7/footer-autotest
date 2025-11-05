@@ -1,7 +1,7 @@
 name: CI - Footer Autotest
 
 on:
-  # ручной запуск с кнопки "Run workflow"
+  # ручной запуск кнопкой
   workflow_dispatch:
     inputs:
       pages:
@@ -27,6 +27,7 @@ jobs:
         with:
           python-version: "3.11"
 
+      # ставим Chrome (Selenium Manager сам подберёт chromedriver)
       - name: Install Google Chrome
         uses: browser-actions/setup-chrome@v1
         with:
@@ -40,7 +41,7 @@ jobs:
       - name: Run tests (headless) with HTML report
         env:
           BASE_URL: https://only.digital
-          # если запуск с кнопки — берём pages из inputs, иначе дефолт главной страницы
+          # из кнопки Run workflow; если пусто — используем дефолт
           PAGES: ${{ github.event.inputs.pages }}
         run: |
           mkdir -p reports
